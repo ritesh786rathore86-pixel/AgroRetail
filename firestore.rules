@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'ADMIN' || 
+         request.auth.token.email == 'admin@agroretail.com' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
+    }
+    
+    function isRetailerOwner(retailerId) {
+      return isAuthenticated() && 
+        (request.auth.uid == retailerId || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.retailerId == retailerId);
+    }
+
+    // User authentication / profile documents
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Retailers master collection
+    match /retailers/{retailerId} {
+      // Admin can manage all; Retailer can read only their own profile
+      allow read: if isAdmin() || isRetailerOwner(retailerId);
+      allow write: if isAdmin();
+    }
+
+    // Products / Item Master (Admin full control, active products readable by authenticated retailers)
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Companies module
+    match /companies/{companyId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Orders collection
+    match /orders/{orderId} {
+      // Admin can view/modify all; Retailer can read and create only their own orders
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.retailerId == request.auth.uid;
+      allow update: if isAdmin(); // Only Admin can update status or notes
+      allow delete: if isAdmin();
+    }
+
+    match /order_items/{itemId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.retailerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Bills collection (Only retailer can see their own bills; Admin can create/modify)
+    match /bills/{billId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Account Statements & Passbooks
+    match /statements/{statementId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    match /passbooks/{entryId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Promotional Posters & Offers
+    match /posters/{posterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (isAuthenticated() && (resource.data.targetRetailerId == request.auth.uid || resource.data.targetRetailerId == 'ALL'));
+      allow update: if isAuthenticated() && (resource.data.targetRetailerId == request.auth.uid || isAdmin()); // e.g. mark read
+      allow create, delete: if isAdmin();
+    }
+
+    // Device Tokens for FCM
+    match /device_tokens/{tokenId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Payment Reminders
+    match /payment_reminders/{reminderId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.retailerId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Import History
+    match /import_history/{historyId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

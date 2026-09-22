@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (request.auth.token.role == 'ADMIN' || request.auth.token.email == 'admin@agroretail.com');
+    }
+
+    // Product images: readable by all authenticated, written by admin
+    match /products/{productId}/{allImages=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Company logos: readable by all authenticated, written by admin
+    match /companies/{companyId}/{allLogos=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Promotional posters: readable by all authenticated, written by admin
+    match /posters/{posterId}/{allPosters=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Bills: retailers can only read their own bills; Admin can read/write all
+    match /bills/{retailerId}/{billFile} {
+      allow read: if isAuthenticated() && (request.auth.uid == retailerId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Account Statements / Passbook PDFs: retailers can only read their own statements
+    match /statements/{retailerId}/{statementFile} {
+      allow read: if isAuthenticated() && (request.auth.uid == retailerId || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}
