@@ -1,6 +1,6 @@
 {
-  "name": "Siddhi Vinayak Agro Mart",
-  "description": "Siddhi Vinayak Agro Mart - Agricultural distributor ordering and retailer management platform.",
+  "name": "SV AGRO SHOPE",
+  "description": "SV AGRO SHOPE - Agricultural distributor ordering, inventory, invoices and retailer management platform.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

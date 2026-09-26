@@ -21,7 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.OrderStatus
+import com.example.data.model.RetailerStatus
 import com.example.data.repository.AgroRepository
+import com.example.ui.components.GanpatiAgroBrandLogo
 import com.example.ui.components.OrderStatusBadge
 import com.example.ui.components.formatCurrency
 import com.example.ui.components.formatDateShort
@@ -44,6 +46,7 @@ fun AdminDashboardScreen(
     onNavigateToPosters: () -> Unit = {},
     onNavigateToReminders: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
+    onNavigateToChat: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
     val products by repository.products.collectAsState()
@@ -51,13 +54,19 @@ fun AdminDashboardScreen(
     val orders by repository.orders.collectAsState()
     val manualDocs by repository.manualDocuments.collectAsState()
     val posters by repository.posters.collectAsState()
+    val chatMessages by repository.chatMessages.collectAsState()
     val distributorProfile by repository.distributorProfile.collectAsState()
 
     val totalOutstanding = remember(retailers) { retailers.sumOf { it.outstandingAmount } }
+    val totalRetailersCount = remember(retailers) { retailers.size }
+    val pendingApprovalsCount = remember(retailers) { retailers.count { it.status == RetailerStatus.PENDING } }
+    val activeRetailersCount = remember(retailers) { retailers.count { it.status == RetailerStatus.ACTIVE && it.isActive } }
+    val newOrdersCount = remember(orders) { orders.count { it.status == OrderStatus.Pending } }
     val pendingOrdersCount = remember(orders) { orders.count { it.status == OrderStatus.Pending } }
-    val activeRetailersCount = remember(retailers) { retailers.count { it.isActive } }
-    val activeProductsCount = remember(products) { products.count { it.isActive } }
-    val activePostersCount = remember(posters) { posters.count { it.isActive } }
+    val unreadChatsCount = remember(chatMessages) { repository.getUnreadChatCountForAdmin() }
+    val totalProductsCount = remember(products) { products.size }
+    val activeProductsCount = remember(products) { products.count { it.isActive && it.isVisible && !it.isDelisted } }
+    val lowStockCount = remember(products) { products.count { it.currentStock <= 5 && !it.isDelisted } }
 
     val recentOrders = remember(orders) { orders.take(4) }
 
@@ -91,16 +100,8 @@ fun AdminDashboardScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "ADMIN CONSOLE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = GoldenSun,
-                            letterSpacing = 0.5.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = distributorProfile.companyName.ifBlank { "Siddhi Vinayak Krishi Vikas Kendra" },
-                            fontSize = 18.sp,
+                            text = distributorProfile.companyName.ifBlank { "SV AGRO SHOPE" },
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )
@@ -182,26 +183,37 @@ fun AdminDashboardScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Quick KPI Stats Grid
+        // Quick KPI Stats Grid (Item 16: 8 clear cards)
+        Text(
+            text = "KEY METRICS OVERVIEW",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.5.sp
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Row 1: Retailers Metrics
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             StatCard(
-                title = "Pending Orders",
-                value = "$pendingOrdersCount",
-                subtext = "${orders.size} total orders",
-                icon = Icons.Default.PendingActions,
-                iconTint = if (pendingOrdersCount > 0) Color(0xFFD97706) else ForestGreenPrimary,
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToOrders
-            )
-            StatCard(
-                title = "Active Retailers",
-                value = "$activeRetailersCount / ${retailers.size}",
-                subtext = "Registered dealers",
+                title = "Total Retailers",
+                value = "$totalRetailersCount",
+                subtext = "All dealer accounts",
                 icon = Icons.Default.Storefront,
                 iconTint = Color(0xFF2563EB),
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToRetailers
+            )
+            StatCard(
+                title = "Pending Approvals",
+                value = "$pendingApprovalsCount",
+                subtext = if (pendingApprovalsCount > 0) "Needs verification" else "All caught up",
+                icon = Icons.Default.PersonAdd,
+                iconTint = if (pendingApprovalsCount > 0) HarvestAmber else ForestGreenPrimary,
                 modifier = Modifier.weight(1f),
                 onClick = onNavigateToRetailers
             )
@@ -209,62 +221,90 @@ fun AdminDashboardScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // Row 2: Active Retailers & Unread Chats
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatCard(
+                title = "Active Retailers",
+                value = "$activeRetailersCount",
+                subtext = "Verified ordering shops",
+                icon = Icons.Default.CheckCircle,
+                iconTint = ForestGreenPrimary,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToRetailers
+            )
+            StatCard(
+                title = "Unread Chats",
+                value = "$unreadChatsCount",
+                subtext = if (unreadChatsCount > 0) "Messages waiting" else "No pending messages",
+                icon = Icons.Default.Chat,
+                iconTint = if (unreadChatsCount > 0) HarvestAmber else ForestGreenPrimary,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToChat
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Row 3: Orders Metrics
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatCard(
+                title = "New Orders",
+                value = "$newOrdersCount",
+                subtext = "${orders.size} total orders",
+                icon = Icons.Default.LocalShipping,
+                iconTint = ForestGreenPrimary,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToOrders
+            )
+            StatCard(
+                title = "Pending Orders",
+                value = "$pendingOrdersCount",
+                subtext = if (pendingOrdersCount > 0) "Awaiting review" else "Zero pending",
+                icon = Icons.Default.PendingActions,
+                iconTint = if (pendingOrdersCount > 0) GoldenSun else ForestGreenPrimary,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToOrders
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Row 4: Products & Low Stock
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             StatCard(
                 title = "Products Master",
-                value = "$activeProductsCount / ${products.size}",
-                subtext = "Active items in catalog",
+                value = "$totalProductsCount",
+                subtext = "$activeProductsCount active in app",
                 icon = Icons.Default.Inventory2,
                 iconTint = ForestGreenPrimary,
                 modifier = Modifier.weight(1f),
                 onClick = onNavigateToProducts
             )
             StatCard(
-                title = "Documents",
-                value = "${manualDocs.size} Uploaded",
-                subtext = "Bills & Statements",
-                icon = Icons.Default.Description,
-                iconTint = Color(0xFF7C3AED),
+                title = "Low Stock Alert",
+                value = "$lowStockCount Items",
+                subtext = if (lowStockCount > 0) "≤ 5 units in godown" else "Stock levels healthy",
+                icon = Icons.Default.WarningAmber,
+                iconTint = if (lowStockCount > 0) Color(0xFFDC2626) else ForestGreenPrimary,
                 modifier = Modifier.weight(1f),
-                onClick = onNavigateToDocuments
-            )
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val dueRetailersCount = remember(retailers) { retailers.count { it.outstandingAmount > 0 } }
-            StatCard(
-                title = "Payment Reminders",
-                value = "$dueRetailersCount Retailers Due",
-                subtext = "🔊 Voice 'Hello' & WhatsApp",
-                icon = Icons.Default.RecordVoiceOver,
-                iconTint = HarvestAmber,
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToReminders
-            )
-            StatCard(
-                title = "Posters & Schemes",
-                value = "$activePostersCount Active",
-                subtext = "${posters.size} total app banners",
-                icon = Icons.Default.Campaign,
-                iconTint = Color(0xFF059669),
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToPosters
+                onClick = onNavigateToProducts
             )
         }
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Quick Actions Row
+        // Quick Actions Row (Item 16: Retailer Approvals, Orders, Products, Chat, Notifications, Settings)
         Text(
-            text = "QUICK ACTIONS",
+            text = "QUICK ACCESS",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -279,22 +319,48 @@ fun AdminDashboardScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             AdminActionChip(
-                label = "🔊 Reminders",
-                icon = Icons.Default.RecordVoiceOver,
+                label = if (pendingApprovalsCount > 0) "Approvals ($pendingApprovalsCount)" else "Approvals",
+                icon = Icons.Default.HowToReg,
                 modifier = Modifier.weight(1f),
-                onClick = onNavigateToReminders
+                onClick = onNavigateToRetailers
             )
             AdminActionChip(
-                label = "📢 Posters",
-                icon = Icons.Default.Campaign,
-                modifier = Modifier.weight(1f),
-                onClick = onNavigateToPosters
-            )
-            AdminActionChip(
-                label = "📄 PDF Orders",
-                icon = Icons.Default.PictureAsPdf,
+                label = if (pendingOrdersCount > 0) "Orders ($pendingOrdersCount)" else "Orders",
+                icon = Icons.Default.ReceiptLong,
                 modifier = Modifier.weight(1f),
                 onClick = onNavigateToOrders
+            )
+            AdminActionChip(
+                label = "Products",
+                icon = Icons.Default.Inventory2,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToProducts
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AdminActionChip(
+                label = if (unreadChatsCount > 0) "Chat ($unreadChatsCount)" else "Chat",
+                icon = Icons.Default.Chat,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToChat
+            )
+            AdminActionChip(
+                label = "Notifications",
+                icon = Icons.Default.Notifications,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToNotifications
+            )
+            AdminActionChip(
+                label = "Settings",
+                icon = Icons.Default.Settings,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToSettings
             )
         }
 

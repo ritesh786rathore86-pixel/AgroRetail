@@ -30,10 +30,12 @@ import com.example.ui.theme.HarvestAmber
 @Composable
 fun AdminSettingsScreen(
     repository: AgroRepository,
+    onNavigateToRecycleBin: () -> Unit = {},
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
     val distributorProfile by repository.distributorProfile.collectAsState()
+    val recycleBinItems by repository.recycleBinItems.collectAsState()
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showResetConfirmation by remember { mutableStateOf(false) }
 
@@ -198,6 +200,47 @@ fun AdminSettingsScreen(
                                 Column {
                                     Text(text = "Edit Distributor Profile", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                     Text(text = "Update firm name, address, GSTIN, bank & UPI", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+
+                    Surface(
+                        onClick = onNavigateToRecycleBin,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFDC2626))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = "Recycle Bin (Trash)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                        if (recycleBinItems.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFFDC2626),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${recycleBinItems.size}",
+                                                    color = Color.White,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(text = "Restore or permanently delete removed items", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -12,16 +12,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.Retailer
 import com.example.data.repository.AgroRepository
+import com.example.ui.chat.RetailerChatScreen
 import com.example.ui.theme.ForestGreenPrimary
 
 enum class RetailerTab(val title: String, val icon: ImageVector) {
     HOME("Home", Icons.Default.Home),
     PRODUCTS("Products", Icons.Default.Inventory2),
-    CART("Cart", Icons.Default.ShoppingCart),
     ORDERS("My Orders", Icons.Default.ReceiptLong),
+    CHAT("Chat", Icons.Default.Chat),
+    PROFILE("Profile", Icons.Default.Person),
+    CART("Cart", Icons.Default.ShoppingCart),
+    NOTIFICATIONS("Alerts", Icons.Default.Notifications),
     REMINDERS("Reminders", Icons.Default.RecordVoiceOver),
     DOCUMENTS("Documents", Icons.Default.Description),
-    PROFILE("Profile", Icons.Default.Person)
+    BILLS("Bills", Icons.Default.Receipt),
+    PASSBOOK("Passbook", Icons.Default.AccountBalance)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,17 +34,25 @@ enum class RetailerTab(val title: String, val icon: ImageVector) {
 fun RetailerMainScreen(
     retailer: Retailer,
     repository: AgroRepository,
+    initialTab: RetailerTab = RetailerTab.HOME,
+    autoPlayVoiceReminder: Boolean = false,
     onLogout: () -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(RetailerTab.HOME) }
+    var selectedTab by remember(initialTab) { mutableStateOf(initialTab) }
+    var autoPlayReminderVoice by remember(autoPlayVoiceReminder) { mutableStateOf(autoPlayVoiceReminder) }
     var initialCatalogCompanyFilter by remember { mutableStateOf<String?>(null) }
 
     val cart by repository.cart.collectAsState()
     val totalCartItems = remember(cart) { cart.values.sumOf { it.quantity } }
 
-    val manualDocs by repository.manualDocuments.collectAsState()
-    val myDocsCount = remember(manualDocs, retailer.id) {
-        manualDocs.count { it.retailerId == retailer.id }
+    val chatMessages by repository.chatMessages.collectAsState()
+    val unreadChatCount = remember(chatMessages, retailer.id) {
+        repository.getUnreadChatCountForRetailer(retailer.id)
+    }
+
+    val notifications by repository.notifications.collectAsState()
+    val unreadNotifsCount = remember(notifications, retailer.id) {
+        notifications.count { !it.isRead && (it.targetRetailerId == retailer.id || it.targetRetailerId == "ALL") }
     }
 
     val paymentReminders by repository.paymentReminders.collectAsState()
@@ -53,25 +66,35 @@ fun RetailerMainScreen(
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = ForestGreenPrimary
             ) {
-                RetailerTab.values().forEach { tab ->
+                // Primary 5 navigation items
+                val bottomBarTabs = listOf(
+                    RetailerTab.HOME,
+                    RetailerTab.PRODUCTS,
+                    RetailerTab.ORDERS,
+                    RetailerTab.CHAT,
+                    RetailerTab.PROFILE
+                )
+
+                bottomBarTabs.forEach { tab ->
                     val isSelected = selectedTab == tab
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { selectedTab = tab },
                         icon = {
-                            if (tab == RetailerTab.CART && totalCartItems > 0) {
-                                BadgedBox(badge = { Badge { Text("$totalCartItems") } }) {
-                                    Icon(tab.icon, contentDescription = tab.title)
+                            when (tab) {
+                                RetailerTab.CHAT -> {
+                                    if (unreadChatCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$unreadChatCount") } }) {
+                                            Icon(tab.icon, contentDescription = tab.title)
+                                        }
+                                    } else {
+                                        Icon(tab.icon, contentDescription = tab.title)
+                                    }
                                 }
-                            } else if (tab == RetailerTab.REMINDERS && myRemindersCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$myRemindersCount") } }) {
-                                    Icon(tab.icon, contentDescription = tab.title)
-                                }
-                            } else {
-                                Icon(tab.icon, contentDescription = tab.title)
+                                else -> Icon(tab.icon, contentDescription = tab.title)
                             }
                         },
-                        label = { Text(tab.title, fontSize = 9.sp, maxLines = 1) },
+                        label = { Text(tab.title, fontSize = 10.sp, maxLines = 1) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ForestGreenPrimary,
                             selectedTextColor = ForestGreenPrimary,
@@ -101,10 +124,15 @@ fun RetailerMainScreen(
                         onNavigateToOrders = { selectedTab = RetailerTab.ORDERS },
                         onNavigateToDocuments = { selectedTab = RetailerTab.DOCUMENTS },
                         onNavigateToProfile = { selectedTab = RetailerTab.PROFILE },
-                        onNavigateToReminders = { selectedTab = RetailerTab.REMINDERS },
+                        onNavigateToReminders = { autoPlay ->
+                            selectedTab = RetailerTab.REMINDERS
+                            autoPlayReminderVoice = autoPlay
+                        },
                         onSelectProductCategory = { _ ->
                             selectedTab = RetailerTab.PRODUCTS
-                        }
+                        },
+                        onNavigateToChat = { selectedTab = RetailerTab.CHAT },
+                        onNavigateToNotifications = { selectedTab = RetailerTab.NOTIFICATIONS }
                     )
                 }
                 RetailerTab.PRODUCTS -> {
@@ -112,6 +140,19 @@ fun RetailerMainScreen(
                         repository = repository,
                         initialCompanyFilter = initialCatalogCompanyFilter,
                         onNavigateToCart = { selectedTab = RetailerTab.CART }
+                    )
+                }
+                RetailerTab.ORDERS -> {
+                    RetailerOrdersScreen(
+                        retailer = retailer,
+                        repository = repository,
+                        onNavigateToCatalog = { selectedTab = RetailerTab.PRODUCTS }
+                    )
+                }
+                RetailerTab.CHAT -> {
+                    RetailerChatScreen(
+                        retailer = retailer,
+                        repository = repository
                     )
                 }
                 RetailerTab.CART -> {
@@ -124,22 +165,38 @@ fun RetailerMainScreen(
                         }
                     )
                 }
-                RetailerTab.ORDERS -> {
-                    RetailerOrdersScreen(
+                RetailerTab.NOTIFICATIONS -> {
+                    RetailerNotificationsScreen(
                         retailer = retailer,
                         repository = repository,
-                        onNavigateToCatalog = { selectedTab = RetailerTab.PRODUCTS }
+                        onNavigateToOrders = { selectedTab = RetailerTab.ORDERS },
+                        onNavigateToBills = { selectedTab = RetailerTab.BILLS },
+                        onNavigateToPassbook = { selectedTab = RetailerTab.PASSBOOK },
+                        onNavigateToReminders = { selectedTab = RetailerTab.REMINDERS }
                     )
                 }
                 RetailerTab.REMINDERS -> {
                     RetailerRemindersScreen(
                         retailer = retailer,
                         repository = repository,
+                        autoPlayFirstReminder = autoPlayReminderVoice,
                         onNavigateBack = { selectedTab = RetailerTab.HOME }
                     )
                 }
                 RetailerTab.DOCUMENTS -> {
                     RetailerDocumentsScreen(
+                        retailer = retailer,
+                        repository = repository
+                    )
+                }
+                RetailerTab.BILLS -> {
+                    RetailerBillsScreen(
+                        retailer = retailer,
+                        repository = repository
+                    )
+                }
+                RetailerTab.PASSBOOK -> {
+                    RetailerPassbookScreen(
                         retailer = retailer,
                         repository = repository
                     )

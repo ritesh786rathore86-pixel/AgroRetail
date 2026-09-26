@@ -3,7 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/img_ganesh_agro_logo"
+        android:drawable="@drawable/ganpati_agro_logo"
         android:gravity="center" />
 </layer-list>
-

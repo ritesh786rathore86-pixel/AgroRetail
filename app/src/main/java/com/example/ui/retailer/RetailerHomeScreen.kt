@@ -44,8 +44,10 @@ fun RetailerHomeScreen(
     onNavigateToOrders: () -> Unit,
     onNavigateToDocuments: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    onNavigateToReminders: () -> Unit = {},
-    onSelectProductCategory: (String) -> Unit = {}
+    onNavigateToReminders: (Boolean) -> Unit = {},
+    onSelectProductCategory: (String) -> Unit = {},
+    onNavigateToChat: () -> Unit = {},
+    onNavigateToNotifications: () -> Unit = {}
 ) {
     val orders by repository.orders.collectAsState()
     val products by repository.products.collectAsState()
@@ -54,6 +56,16 @@ fun RetailerHomeScreen(
     val manualDocs by repository.manualDocuments.collectAsState()
     val paymentReminders by repository.paymentReminders.collectAsState()
     val allRetailers by repository.retailers.collectAsState()
+    val registeredCompanies by repository.companies.collectAsState()
+    val chatMessages by repository.chatMessages.collectAsState()
+    val notifications by repository.notifications.collectAsState()
+
+    val myUnreadChatCount = remember(chatMessages, retailer.id) {
+        repository.getUnreadChatCountForRetailer(retailer.id)
+    }
+    val myUnreadNotifsCount = remember(notifications, retailer.id) {
+        notifications.count { !it.isRead && (it.targetRetailerId == retailer.id || it.targetRetailerId == "ALL") }
+    }
 
     val liveRetailer = remember(allRetailers, retailer) {
         allRetailers.firstOrNull { it.id == retailer.id } ?: retailer
@@ -66,20 +78,38 @@ fun RetailerHomeScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("All") }
+    var selectedCompanyFilter by remember { mutableStateOf("All Companies") }
 
     val categories = remember(products) {
-        listOf("All") + products.filter { it.isActive && it.isVisible && !it.isDelisted }.map { it.category }.distinct().filter { it.isNotBlank() }
+        listOf("All") + products.filter { !it.isDelisted }.map { it.category.trim() }.distinct().filter { it.isNotBlank() }
     }
 
-    val displayedProducts = remember(products, searchQuery, selectedCategoryFilter) {
+    val companies = remember(products, registeredCompanies) {
+        val fromProds = products.map { it.company.trim() }.filter { it.isNotBlank() }
+        val fromReg = registeredCompanies.map { it.name.trim() }.filter { it.isNotBlank() }
+        listOf("All Companies") + (fromProds + fromReg).distinct().sorted()
+    }
+
+    val searchTokens = remember(searchQuery) {
+        searchQuery.trim().lowercase().split("\\s+".toRegex()).filter { it.isNotBlank() }
+    }
+
+    val displayedProducts = remember(products, searchTokens, selectedCategoryFilter, selectedCompanyFilter) {
         products.filter { p ->
-            p.isActive && p.isVisible && !p.isDelisted &&
+            !p.isDelisted &&
             (selectedCategoryFilter == "All" || p.category.equals(selectedCategoryFilter, ignoreCase = true)) &&
-            (searchQuery.isBlank() ||
-                p.itemName.contains(searchQuery, ignoreCase = true) ||
-                p.alias.contains(searchQuery, ignoreCase = true) ||
-                p.company.contains(searchQuery, ignoreCase = true)
-            )
+            (selectedCompanyFilter == "All Companies" || p.company.equals(selectedCompanyFilter, ignoreCase = true)) &&
+            (searchTokens.isEmpty() || searchTokens.all { token ->
+                p.itemName.lowercase().contains(token) ||
+                p.company.lowercase().contains(token) ||
+                p.alias.lowercase().contains(token) ||
+                p.category.lowercase().contains(token) ||
+                p.itemCode.lowercase().contains(token) ||
+                p.packSize.lowercase().contains(token) ||
+                p.unit.lowercase().contains(token) ||
+                p.batch.lowercase().contains(token) ||
+                p.description.lowercase().contains(token)
+            })
         }
     }
 
@@ -162,17 +192,45 @@ fun RetailerHomeScreen(
                     }
                 }
 
-                // Cart Icon Button with Badge
-                IconButton(
-                    onClick = onNavigateToCart,
-                    modifier = Modifier.testTag("home_cart_button")
-                ) {
-                    if (totalCartItems > 0) {
-                        BadgedBox(badge = { Badge { Text("$totalCartItems") } }) {
+                // Header Action Buttons: Chat, Notifications, Cart
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onNavigateToChat,
+                        modifier = Modifier.testTag("home_chat_button")
+                    ) {
+                        if (myUnreadChatCount > 0) {
+                            BadgedBox(badge = { Badge { Text("$myUnreadChatCount") } }) {
+                                Icon(Icons.Default.Chat, contentDescription = "Distributor Chat", tint = ForestGreenPrimary)
+                            }
+                        } else {
+                            Icon(Icons.Default.Chat, contentDescription = "Distributor Chat", tint = ForestGreenPrimary)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onNavigateToNotifications,
+                        modifier = Modifier.testTag("home_notif_button")
+                    ) {
+                        if (myUnreadNotifsCount > 0) {
+                            BadgedBox(badge = { Badge { Text("$myUnreadNotifsCount") } }) {
+                                Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = ForestGreenPrimary)
+                            }
+                        } else {
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = ForestGreenPrimary)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onNavigateToCart,
+                        modifier = Modifier.testTag("home_cart_button")
+                    ) {
+                        if (totalCartItems > 0) {
+                            BadgedBox(badge = { Badge { Text("$totalCartItems") } }) {
+                                Icon(Icons.Default.ShoppingCart, contentDescription = "Cart", tint = ForestGreenPrimary)
+                            }
+                        } else {
                             Icon(Icons.Default.ShoppingCart, contentDescription = "Cart", tint = ForestGreenPrimary)
                         }
-                    } else {
-                        Icon(Icons.Default.ShoppingCart, contentDescription = "Cart", tint = ForestGreenPrimary)
                     }
                 }
             }
@@ -189,7 +247,7 @@ fun RetailerHomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .clickable { onNavigateToReminders() }
+                    .clickable { onNavigateToReminders(true) }
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
@@ -255,12 +313,12 @@ fun RetailerHomeScreen(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Search Box
-        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+        // Search Box with Intelligent Company & Multi-token Search
+        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search products, technical names, brand...", fontSize = 13.sp) },
+                placeholder = { Text("Search by Product, Company, Pack Size, Salt...", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = ForestGreenPrimary) },
                 trailingIcon = {
                     if (searchQuery.isNotBlank()) {
@@ -280,22 +338,131 @@ fun RetailerHomeScreen(
                     .fillMaxWidth()
                     .testTag("home_search_input")
             )
+
+            // Intelligent Company Filter Row directly below search input
+            if (companies.size > 1) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(companies) { comp ->
+                        val isSelected = selectedCompanyFilter == comp
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedCompanyFilter = if (isSelected && comp != "All Companies") "All Companies" else comp
+                            },
+                            label = {
+                                Text(
+                                    text = comp,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = ForestGreenPrimary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Real-time Search Result Feedback Banner
+            if (searchQuery.isNotBlank() || selectedCompanyFilter != "All Companies") {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Found ${displayedProducts.size} matching items" +
+                                if (selectedCompanyFilter != "All Companies") " in $selectedCompanyFilter" else "",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ForestGreenPrimary
+                    )
+                    TextButton(
+                        onClick = {
+                            searchQuery = ""
+                            selectedCompanyFilter = "All Companies"
+                            selectedCategoryFilter = "All"
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Reset Search", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
         }
 
-        // Promotional Banners / Posters
+        // If actively searching, show instant search results right here!
+        if (searchQuery.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            if (displayedProducts.isEmpty()) {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.SearchOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("No products found for \"$searchQuery\"", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Try searching with company name (e.g. Bayer, UPL) or pack size.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Instant Search Results (${displayedProducts.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = ForestGreenPrimary)
+                    displayedProducts.take(8).forEach { product ->
+                        val cartItem = cart[product.id]
+                        RetailerHomeProductRow(
+                            product = product,
+                            cartQuantity = cartItem?.quantity ?: 0,
+                            onAddToCart = { repository.addToCart(product, 1) },
+                            onIncrease = { repository.addToCart(product, 1) },
+                            onDecrease = {
+                                val current = cartItem?.quantity ?: 0
+                                if (current > 1) {
+                                    repository.setItemQuantity(product.id, current - 1)
+                                } else {
+                                    repository.removeFromCart(product.id)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Promotional Banners / Posters (LARGE FORMAT: PORTER BADA KARO)
         val activePosters = remember(posters) { posters.filter { it.isActive } }
         if (activePosters.isNotEmpty()) {
             Spacer(modifier = Modifier.height(14.dp))
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(activePosters, key = { it.id }) { poster ->
                     Card(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
                         modifier = Modifier
-                            .width(300.dp)
-                            .height(125.dp)
+                            .width(340.dp)
+                            .height(210.dp)
                             .clickable { onNavigateToProducts() }
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -317,49 +484,96 @@ fun RetailerHomeScreen(
                                         )
                                 )
                             }
-                            // Gradient overlay
+                            // Deep gradient overlay for crystal clear text readability
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(
                                         Brush.verticalGradient(
-                                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                                            listOf(
+                                                Color.Black.copy(alpha = 0.15f),
+                                                Color.Black.copy(alpha = 0.50f),
+                                                Color.Black.copy(alpha = 0.88f)
+                                            )
                                         )
                                     )
                             )
                             Column(
                                 modifier = Modifier
                                     .align(Alignment.BottomStart)
-                                    .padding(12.dp)
+                                    .padding(16.dp)
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = GoldenSun
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = "SPECIAL OFFER",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = GoldenSun
+                                    ) {
+                                        Text(
+                                            text = "SPECIAL SCHEME",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.Black,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                    if (poster.notificationTitle.isNotBlank()) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color.White.copy(alpha = 0.25f)
+                                        ) {
+                                            Text(
+                                                text = poster.notificationTitle,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
                                 Text(
                                     text = poster.title,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp,
                                     color = Color.White,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
+
                                 if (poster.description.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Text(
                                         text = poster.description,
-                                        fontSize = 11.sp,
-                                        color = Color.White.copy(alpha = 0.85f),
-                                        maxLines = 1,
+                                        fontSize = 13.sp,
+                                        color = Color.White.copy(alpha = 0.90f),
+                                        maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Tap to view scheme products",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = GoldenSun
+                                    )
+                                    Icon(
+                                        Icons.Default.ArrowForward,
+                                        contentDescription = null,
+                                        tint = GoldenSun,
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
@@ -431,13 +645,31 @@ fun RetailerHomeScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             QuickActionTile(
+                title = "Live Chat",
+                subtitle = if (myUnreadChatCount > 0) "$myUnreadChatCount New" else "Support",
+                icon = Icons.Default.Chat,
+                color = Color(0xFF059669),
+                badgeCount = myUnreadChatCount,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToChat
+            )
+            QuickActionTile(
+                title = "Alerts",
+                subtitle = if (myUnreadNotifsCount > 0) "$myUnreadNotifsCount Unread" else "Updates",
+                icon = Icons.Default.Notifications,
+                color = Color(0xFFD97706),
+                badgeCount = myUnreadNotifsCount,
+                modifier = Modifier.weight(1f),
+                onClick = onNavigateToNotifications
+            )
+            QuickActionTile(
                 title = "Voice Reminder",
                 subtitle = if (liveRetailer.outstandingAmount > 0) formatCurrency(liveRetailer.outstandingAmount) else "Cleared",
                 icon = Icons.Default.RecordVoiceOver,
                 color = HarvestAmber,
                 badgeCount = if (liveRetailer.outstandingAmount > 0) 1 else 0,
                 modifier = Modifier.weight(1f),
-                onClick = onNavigateToReminders
+                onClick = { onNavigateToReminders(true) }
             )
             QuickActionTile(
                 title = "My Profile",

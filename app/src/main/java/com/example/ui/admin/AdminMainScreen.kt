@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.AdminUser
 import com.example.data.model.OrderStatus
 import com.example.data.repository.AgroRepository
+import com.example.ui.chat.AdminChatScreen
 import com.example.ui.theme.ForestGreenPrimary
 import com.example.ui.theme.GoldenSun
 import kotlinx.coroutines.launch
@@ -25,6 +26,8 @@ import kotlinx.coroutines.launch
 enum class AdminNavigationSection(val title: String, val icon: ImageVector) {
     DASHBOARD("Dashboard", Icons.Default.Dashboard),
     ORDERS("Orders & PDFs", Icons.Default.LocalShipping),
+    CHAT("Retailer Chat", Icons.Default.Chat),
+    NOTIFICATIONS("Notifications", Icons.Default.Notifications),
     REMINDERS("Payment Reminders", Icons.Default.RecordVoiceOver),
     POSTERS("Posters & Schemes", Icons.Default.Campaign),
     RETAILERS("Retailers", Icons.Default.Storefront),
@@ -33,6 +36,7 @@ enum class AdminNavigationSection(val title: String, val icon: ImageVector) {
     DOCUMENTS("Documents", Icons.Default.Description),
     CATEGORIES("Retailer Categories", Icons.Default.WorkspacePremium),
     EXCEL_IMPORT("Excel Import", Icons.Default.UploadFile),
+    RECYCLE_BIN("Recycle Bin", Icons.Default.DeleteSweep),
     SETTINGS("Settings", Icons.Default.Settings)
 }
 
@@ -44,14 +48,23 @@ fun AdminMainScreen(
     onLogout: () -> Unit
 ) {
     val orders by repository.orders.collectAsState()
-    val pendingCount = remember(orders) { orders.count { it.status == OrderStatus.Pending } }
+    val pendingOrdersCount = remember(orders) { orders.count { it.status == OrderStatus.Pending } }
     val manualDocs by repository.manualDocuments.collectAsState()
     val paymentReminders by repository.paymentReminders.collectAsState()
     val posters by repository.posters.collectAsState()
+    val recycleBinItems by repository.recycleBinItems.collectAsState()
+    val chatMessages by repository.chatMessages.collectAsState()
+    val notifications by repository.notifications.collectAsState()
+
     val activePostersCount = remember(posters) { posters.count { it.isActive } }
     val dueRemindersCount = remember(paymentReminders) { paymentReminders.count { !it.isPaid } }
+    val unreadChatCount = remember(chatMessages) { repository.getUnreadChatCountForAdmin() }
+    val unreadNotifCount = remember(notifications) {
+        notifications.count { !it.isRead && (it.targetRetailerId == "ADMIN" || it.targetRetailerId == "ALL") }
+    }
 
     var currentSection by remember { mutableStateOf(AdminNavigationSection.DASHBOARD) }
+    var selectedChatRetailerId by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -96,33 +109,85 @@ fun AdminMainScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                AdminNavigationSection.values().forEach { section ->
+                val drawerSections = AdminNavigationSection.values()
+
+                drawerSections.forEach { section ->
                     val isSelected = currentSection == section
                     NavigationDrawerItem(
                         icon = {
-                            if (section == AdminNavigationSection.ORDERS && pendingCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$pendingCount") } }) {
-                                    Icon(section.icon, contentDescription = null)
+                            when (section) {
+                                AdminNavigationSection.ORDERS -> {
+                                    if (pendingOrdersCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$pendingOrdersCount") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
                                 }
-                            } else if (section == AdminNavigationSection.REMINDERS && dueRemindersCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$dueRemindersCount") } }) {
-                                    Icon(section.icon, contentDescription = null)
+                                AdminNavigationSection.CHAT -> {
+                                    if (unreadChatCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$unreadChatCount") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
                                 }
-                            } else if (section == AdminNavigationSection.POSTERS && activePostersCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$activePostersCount") } }) {
-                                    Icon(section.icon, contentDescription = null)
+                                AdminNavigationSection.NOTIFICATIONS -> {
+                                    if (unreadNotifCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$unreadNotifCount") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
                                 }
-                            } else if (section == AdminNavigationSection.DOCUMENTS && manualDocs.isNotEmpty()) {
-                                BadgedBox(badge = { Badge { Text("${manualDocs.size}") } }) {
-                                    Icon(section.icon, contentDescription = null)
+                                AdminNavigationSection.REMINDERS -> {
+                                    if (dueRemindersCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$dueRemindersCount") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
                                 }
-                            } else {
-                                Icon(section.icon, contentDescription = null)
+                                AdminNavigationSection.POSTERS -> {
+                                    if (activePostersCount > 0) {
+                                        BadgedBox(badge = { Badge { Text("$activePostersCount") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
+                                }
+                                AdminNavigationSection.DOCUMENTS -> {
+                                    if (manualDocs.isNotEmpty()) {
+                                        BadgedBox(badge = { Badge { Text("${manualDocs.size}") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
+                                }
+                                AdminNavigationSection.RECYCLE_BIN -> {
+                                    if (recycleBinItems.isNotEmpty()) {
+                                        BadgedBox(badge = { Badge(containerColor = Color(0xFFDC2626)) { Text("${recycleBinItems.size}") } }) {
+                                            Icon(section.icon, contentDescription = null)
+                                        }
+                                    } else {
+                                        Icon(section.icon, contentDescription = null)
+                                    }
+                                }
+                                else -> Icon(section.icon, contentDescription = null)
                             }
                         },
                         label = { Text(section.title) },
                         selected = isSelected,
                         onClick = {
+                            if (section == AdminNavigationSection.CHAT) {
+                                selectedChatRetailerId = null
+                            }
                             currentSection = section
                             coroutineScope.launch { drawerState.close() }
                         },
@@ -167,6 +232,27 @@ fun AdminMainScreen(
                         titleContentColor = ForestGreenPrimary
                     ),
                     actions = {
+                        IconButton(onClick = {
+                            selectedChatRetailerId = null
+                            currentSection = AdminNavigationSection.CHAT
+                        }) {
+                            if (unreadChatCount > 0) {
+                                BadgedBox(badge = { Badge { Text("$unreadChatCount") } }) {
+                                    Icon(Icons.Default.Chat, contentDescription = "Chat", tint = ForestGreenPrimary)
+                                }
+                            } else {
+                                Icon(Icons.Default.Chat, contentDescription = "Chat", tint = ForestGreenPrimary)
+                            }
+                        }
+                        IconButton(onClick = { currentSection = AdminNavigationSection.NOTIFICATIONS }) {
+                            if (unreadNotifCount > 0) {
+                                BadgedBox(badge = { Badge { Text("$unreadNotifCount") } }) {
+                                    Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = ForestGreenPrimary)
+                                }
+                            } else {
+                                Icon(Icons.Default.Notifications, contentDescription = "Notifications", tint = ForestGreenPrimary)
+                            }
+                        }
                         IconButton(onClick = { currentSection = AdminNavigationSection.REMINDERS }) {
                             if (dueRemindersCount > 0) {
                                 BadgedBox(badge = { Badge { Text("$dueRemindersCount") } }) {
@@ -174,15 +260,6 @@ fun AdminMainScreen(
                                 }
                             } else {
                                 Icon(Icons.Default.RecordVoiceOver, contentDescription = "Voice Reminders", tint = ForestGreenPrimary)
-                            }
-                        }
-                        IconButton(onClick = { currentSection = AdminNavigationSection.POSTERS }) {
-                            if (activePostersCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$activePostersCount") } }) {
-                                    Icon(Icons.Default.Campaign, contentDescription = "Posters & Schemes", tint = ForestGreenPrimary)
-                                }
-                            } else {
-                                Icon(Icons.Default.Campaign, contentDescription = "Posters & Schemes", tint = ForestGreenPrimary)
                             }
                         }
                         IconButton(onClick = { currentSection = AdminNavigationSection.SETTINGS }) {
@@ -202,8 +279,7 @@ fun AdminMainScreen(
                     val primaryTabs = listOf(
                         AdminNavigationSection.DASHBOARD,
                         AdminNavigationSection.ORDERS,
-                        AdminNavigationSection.REMINDERS,
-                        AdminNavigationSection.POSTERS,
+                        AdminNavigationSection.CHAT,
                         AdminNavigationSection.RETAILERS,
                         AdminNavigationSection.PRODUCTS
                     )
@@ -212,22 +288,33 @@ fun AdminMainScreen(
                         val isSelected = currentSection == tab
                         NavigationBarItem(
                             selected = isSelected,
-                            onClick = { currentSection = tab },
+                            onClick = {
+                                if (tab == AdminNavigationSection.CHAT) {
+                                    selectedChatRetailerId = null
+                                }
+                                currentSection = tab
+                            },
                             icon = {
-                                if (tab == AdminNavigationSection.ORDERS && pendingCount > 0) {
-                                    BadgedBox(badge = { Badge { Text("$pendingCount") } }) {
-                                        Icon(tab.icon, contentDescription = null)
+                                when (tab) {
+                                    AdminNavigationSection.ORDERS -> {
+                                        if (pendingOrdersCount > 0) {
+                                            BadgedBox(badge = { Badge { Text("$pendingOrdersCount") } }) {
+                                                Icon(tab.icon, contentDescription = null)
+                                            }
+                                        } else {
+                                            Icon(tab.icon, contentDescription = null)
+                                        }
                                     }
-                                } else if (tab == AdminNavigationSection.REMINDERS && dueRemindersCount > 0) {
-                                    BadgedBox(badge = { Badge { Text("$dueRemindersCount") } }) {
-                                        Icon(tab.icon, contentDescription = null)
+                                    AdminNavigationSection.CHAT -> {
+                                        if (unreadChatCount > 0) {
+                                            BadgedBox(badge = { Badge { Text("$unreadChatCount") } }) {
+                                                Icon(tab.icon, contentDescription = null)
+                                            }
+                                        } else {
+                                            Icon(tab.icon, contentDescription = null)
+                                        }
                                     }
-                                } else if (tab == AdminNavigationSection.POSTERS && activePostersCount > 0) {
-                                    BadgedBox(badge = { Badge { Text("$activePostersCount") } }) {
-                                        Icon(tab.icon, contentDescription = null)
-                                    }
-                                } else {
-                                    Icon(tab.icon, contentDescription = null)
+                                    else -> Icon(tab.icon, contentDescription = null)
                                 }
                             },
                             label = { Text(tab.title, fontSize = 9.sp, maxLines = 1) },
@@ -258,18 +345,34 @@ fun AdminMainScreen(
                         onNavigateToExcelImport = { currentSection = AdminNavigationSection.EXCEL_IMPORT },
                         onNavigateToPosters = { currentSection = AdminNavigationSection.POSTERS },
                         onNavigateToReminders = { currentSection = AdminNavigationSection.REMINDERS },
+                        onNavigateToNotifications = { currentSection = AdminNavigationSection.NOTIFICATIONS },
+                        onNavigateToChat = {
+                            selectedChatRetailerId = null
+                            currentSection = AdminNavigationSection.CHAT
+                        },
                         onNavigateToSettings = { currentSection = AdminNavigationSection.SETTINGS }
                     )
                     AdminNavigationSection.ORDERS -> AdminOrdersScreen(repository = repository)
+                    AdminNavigationSection.CHAT -> AdminChatScreen(
+                        repository = repository,
+                        initialRetailerId = selectedChatRetailerId
+                    )
+                    AdminNavigationSection.NOTIFICATIONS -> AdminNotificationsScreen(repository = repository)
                     AdminNavigationSection.REMINDERS -> AdminPaymentRemindersScreen(repository = repository)
                     AdminNavigationSection.POSTERS -> AdminPostersScreen(repository = repository)
                     AdminNavigationSection.RETAILERS -> AdminRetailersScreen(
                         repository = repository,
-                        onNavigateToExcelImport = { currentSection = AdminNavigationSection.EXCEL_IMPORT }
+                        onNavigateToExcelImport = { currentSection = AdminNavigationSection.EXCEL_IMPORT },
+                        onNavigateToRecycleBin = { currentSection = AdminNavigationSection.RECYCLE_BIN },
+                        onOpenChatWithRetailer = { retailerId ->
+                            selectedChatRetailerId = retailerId
+                            currentSection = AdminNavigationSection.CHAT
+                        }
                     )
                     AdminNavigationSection.PRODUCTS -> AdminProductsScreen(
                         repository = repository,
-                        onNavigateToExcelImport = { currentSection = AdminNavigationSection.EXCEL_IMPORT }
+                        onNavigateToExcelImport = { currentSection = AdminNavigationSection.EXCEL_IMPORT },
+                        onNavigateToRecycleBin = { currentSection = AdminNavigationSection.RECYCLE_BIN }
                     )
                     AdminNavigationSection.COMPANIES -> AdminCompaniesScreen(repository = repository)
                     AdminNavigationSection.DOCUMENTS -> AdminDocumentsScreen(repository = repository)
@@ -278,7 +381,12 @@ fun AdminMainScreen(
                         repository = repository,
                         onNavigateToHistory = { /* Stay on import */ }
                     )
-                    AdminNavigationSection.SETTINGS -> AdminSettingsScreen(repository = repository, onLogout = onLogout)
+                    AdminNavigationSection.RECYCLE_BIN -> AdminRecycleBinScreen(repository = repository)
+                    AdminNavigationSection.SETTINGS -> AdminSettingsScreen(
+                        repository = repository,
+                        onNavigateToRecycleBin = { currentSection = AdminNavigationSection.RECYCLE_BIN },
+                        onLogout = onLogout
+                    )
                 }
             }
         }

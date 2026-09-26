@@ -21,7 +21,7 @@ data class AdminUser(
 )
 
 data class DistributorProfile(
-    val companyName: String = "Siddhi Vinayak Krishi Vikas Kendra",
+    val companyName: String = "SV AGRO SHOPE",
     val ownerName: String = "Suresh Sharma",
     val email: String = "contact@siddhivinayak.com",
     val phone: String = "9876543210",
@@ -35,6 +35,13 @@ data class DistributorProfile(
     val upiId: String = "siddhivinayak@sbi"
 )
 
+enum class RetailerStatus {
+    ACTIVE,
+    PENDING,
+    REJECTED,
+    DISABLED
+}
+
 data class Retailer(
     val id: String = "",
     val businessName: String = "",
@@ -45,11 +52,15 @@ data class Retailer(
     val whatsappNumber: String = "",
     val email: String = "",
     val pinHash: String = "",
+    val passwordPlain: String = "",
     val address: String = "",
     val city: String = "",
     val state: String = "",
     val pincode: String = "",
     val gstNumber: String = "",
+    val licenseNumber: String = "", // Fertilizer/Pesticide license
+    val status: RetailerStatus = RetailerStatus.ACTIVE,
+    val rejectionReason: String = "",
     val category: String = "SILVER", // Configurable: e.g. GOLD, SILVER, PLATINUM
     val creditLimit: Double = 0.0,
     val openingBalance: Double = 0.0,
@@ -57,7 +68,12 @@ data class Retailer(
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val isApproved: Boolean get() = status == RetailerStatus.ACTIVE && isActive
+    val isPending: Boolean get() = status == RetailerStatus.PENDING
+    val isRejected: Boolean get() = status == RetailerStatus.REJECTED
+    val isDisabled: Boolean get() = status == RetailerStatus.DISABLED || (!isActive && status != RetailerStatus.PENDING)
+}
 
 data class RetailerCategory(
     val id: String = "",
@@ -91,6 +107,10 @@ data class Product(
     val batch: String = "",
     val description: String = "",
     val imageUrl: String = "",
+    val boxRate: Double = 0.0, // Box Selling Rate (e.g. ₹2000 for 1 Box)
+    val pcsPerBox: Int = 1, // Number of PCS per Box (e.g. 20 PCS in 1 Box)
+    val isFeatured: Boolean = false, // Highlighted/Featured product on Retailer Home
+    val featuredOrder: Int = 0,
     val isActive: Boolean = true,
     val isVisible: Boolean = true, // VISIBLE TO RETAILERS: ON/OFF
     val isDelisted: Boolean = false, // Delisted remains in Admin records but hidden from retailers
@@ -209,7 +229,9 @@ data class Poster(
     val updatedAt: Long = System.currentTimeMillis(),
     val createdBy: String = "Admin",
     val notificationTitle: String = "",
-    val notificationMessage: String = ""
+    val notificationMessage: String = "",
+    val linkedProductId: String = "", // Admin-specified product to open on click
+    val linkedProductName: String = ""
 )
 
 data class AppNotification(
@@ -258,9 +280,18 @@ data class ImportHistoryItem(
 data class CartItem(
     val product: Product,
     val quantity: Int,
-    val selectedUnit: String = product.unit.ifBlank { "PCS" }
+    val selectedUnit: String = "PCS", // "PCS" or "BOX"
+    val customRate: Double = 0.0
 ) {
-    val totalAmount: Double get() = product.sellingRate * quantity
+    val effectiveRate: Double get() =
+        if (customRate > 0) customRate
+        else if (selectedUnit.equals("BOX", ignoreCase = true)) {
+            if (product.boxRate > 0) product.boxRate
+            else product.sellingRate * (if (product.pcsPerBox > 1) product.pcsPerBox else 10)
+        } else {
+            product.sellingRate
+        }
+    val totalAmount: Double get() = effectiveRate * quantity
     val gstAmount: Double get() = 0.0 // No GST calculation
     val grandTotal: Double get() = totalAmount
 }
@@ -306,5 +337,43 @@ data class RecycleBinItem(
     val retailerId: String = "", // for retailer isolation
     val deletedBy: String = "Admin",
     val deletedAt: Long = System.currentTimeMillis()
+)
+
+enum class ChatMessageType {
+    TEXT,
+    IMAGE,
+    AUDIO,
+    PRODUCT_LINK,
+    PDF,
+    DOCUMENT
+}
+
+data class ChatMessage(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val senderId: String = "", // "ADMIN" or retailerId
+    val senderName: String = "",
+    val receiverId: String = "", // "ADMIN", retailerId, or "GROUP"
+    val groupId: String = "", // Set when message belongs to a retailer group
+    val message: String = "",
+    val type: ChatMessageType = ChatMessageType.TEXT,
+    val mediaUri: String = "", // local file path, content uri, or cache path
+    val fileName: String = "",
+    val fileSize: Long = 0L,
+    val mimeType: String = "",
+    val audioDurationMs: Long = 0L,
+    val linkedProductId: String = "",
+    val linkedProductName: String = "",
+    val linkedProductRate: Double = 0.0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false
+)
+
+data class ChatGroup(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String = "",
+    val description: String = "",
+    val retailerIds: List<String> = emptyList(),
+    val createdBy: String = "ADMIN",
+    val createdAt: Long = System.currentTimeMillis()
 )
 

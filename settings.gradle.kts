@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Siddhi Vinayak Agro Mart"
+rootProject.name = "SV AGRO SHOPE"
 
 include(":app")

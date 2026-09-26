@@ -38,6 +38,7 @@ import com.example.util.AgroVoiceHelper
 fun RetailerRemindersScreen(
     retailer: Retailer,
     repository: AgroRepository,
+    autoPlayFirstReminder: Boolean = false,
     onNavigateBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -52,6 +53,28 @@ fun RetailerRemindersScreen(
 
     val myReminders = remember(paymentReminders, retailer.id) {
         paymentReminders.filter { it.retailerId == retailer.id && !it.isPaid }
+    }
+
+    // Auto-play voice reminder with sound when opened from notification or alert click
+    var hasAutoPlayed by remember { mutableStateOf(false) }
+    LaunchedEffect(myReminders, autoPlayFirstReminder) {
+        if (autoPlayFirstReminder && !hasAutoPlayed) {
+            hasAutoPlayed = true
+            val target = myReminders.firstOrNull()
+            val amount = target?.outstandingAmount ?: retailer.outstandingAmount
+            val due = target?.dueDate ?: (System.currentTimeMillis() + 86400000L)
+            currentlyPlayingReminderId = target?.id ?: "auto"
+            AgroVoiceHelper.playHelloReminder(
+                context = context,
+                retailerName = retailer.businessName,
+                amount = amount,
+                dueDate = due,
+                billNumber = "",
+                isHindi = true,
+                onStart = { currentlyPlayingReminderId = target?.id ?: "auto" },
+                onDone = { currentlyPlayingReminderId = null }
+            )
+        }
     }
 
     Scaffold(

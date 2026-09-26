@@ -383,6 +383,9 @@ fun AdminPostersScreen(
         var imageUrl by remember { mutableStateOf(initial.imageUrl) }
         var priority by remember { mutableStateOf(initial.priority.toString()) }
         var sendPushOnSave by remember { mutableStateOf(true) }
+        var linkedProductId by remember { mutableStateOf(initial.linkedProductId) }
+        var linkedProductName by remember { mutableStateOf(initial.linkedProductName) }
+        var showProductPicker by remember { mutableStateOf(false) }
 
         val photoPickerLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickVisualMedia()
@@ -557,6 +560,74 @@ fun AdminPostersScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
 
+                        // Linked Product Section
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = "LINK PRODUCT (ON POSTER CLICK)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ForestGreenPrimary,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                if (linkedProductId.isNotBlank()) {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surface,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Link, contentDescription = null, tint = ForestGreenPrimary, modifier = Modifier.size(20.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(text = linkedProductName.ifBlank { "Linked Product" }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                Text(text = "ID: $linkedProductId", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            TextButton(onClick = { showProductPicker = true }) {
+                                                Text("Change", fontSize = 11.sp)
+                                            }
+                                            IconButton(onClick = {
+                                                linkedProductId = ""
+                                                linkedProductName = ""
+                                            }, modifier = Modifier.size(28.dp)) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove Link", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "No product linked (Purely promotional)",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        OutlinedButton(
+                                            onClick = { showProductPicker = true },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Icon(Icons.Default.AddLink, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Link Product", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = sendPushOnSave, onCheckedChange = { sendPushOnSave = it })
                             Spacer(modifier = Modifier.width(6.dp))
@@ -588,6 +659,8 @@ fun AdminPostersScreen(
                                     description = description.trim(),
                                     imageUrl = imageUrl.trim(),
                                     priority = priority.toIntOrNull() ?: 1,
+                                    linkedProductId = linkedProductId,
+                                    linkedProductName = linkedProductName,
                                     isActive = true
                                 )
                                 repository.savePoster(
@@ -606,6 +679,72 @@ fun AdminPostersScreen(
                         }
                     }
                 }
+            }
+
+            if (showProductPicker) {
+                val products by repository.products.collectAsState()
+                var productSearchQuery by remember { mutableStateOf("") }
+                val filteredProducts = remember(products, productSearchQuery) {
+                    products.filter {
+                        productSearchQuery.isBlank() ||
+                        it.itemName.contains(productSearchQuery, ignoreCase = true) ||
+                        it.company.contains(productSearchQuery, ignoreCase = true)
+                    }
+                }
+
+                AlertDialog(
+                    onDismissRequest = { showProductPicker = false },
+                    title = { Text("Select Product to Link", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                            OutlinedTextField(
+                                value = productSearchQuery,
+                                onValueChange = { productSearchQuery = it },
+                                placeholder = { Text("Search products...") },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyColumn(modifier = Modifier.weight(1f)) {
+                                items(filteredProducts, key = { it.id }) { p ->
+                                    Surface(
+                                        color = if (linkedProductId == p.id) ForestGreenPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                linkedProductId = p.id
+                                                linkedProductName = p.itemName
+                                                showProductPicker = false
+                                            }
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Agriculture, contentDescription = null, tint = ForestGreenPrimary, modifier = Modifier.size(20.dp))
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(p.itemName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                Text("${p.company} • ${p.packSize}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            if (linkedProductId == p.id) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = ForestGreenPrimary)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showProductPicker = false }) {
+                            Text("Done")
+                        }
+                    }
+                )
             }
         }
     }

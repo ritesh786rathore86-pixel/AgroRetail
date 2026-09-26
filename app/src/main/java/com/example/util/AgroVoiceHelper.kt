@@ -217,7 +217,7 @@ object AgroVoiceHelper {
         amount: Double,
         dueDate: Long,
         billNumber: String = "",
-        companyName: String = "Siddhi Vinayak Krishi Vikas Kendra"
+        companyName: String = "SV AGRO SHOPE"
     ): String {
         val amountInt = amount.toLong()
         val billPart = if (billNumber.isNotBlank()) " bill number $billNumber" else ""
@@ -230,7 +230,7 @@ object AgroVoiceHelper {
         amount: Double,
         dueDate: Long,
         billNumber: String = "",
-        companyName: String = "Siddhi Vinayak Krishi Vikas Kendra"
+        companyName: String = "SV AGRO SHOPE"
     ): String {
         val dateStr = java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.ENGLISH).format(java.util.Date(dueDate))
         val billPart = if (billNumber.isNotBlank()) " against bill $billNumber" else ""

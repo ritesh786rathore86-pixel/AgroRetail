@@ -718,7 +718,7 @@ object AgroPdfHelper {
         paint.color = Color.rgb(20, 83, 45) // Forest Green
         paint.textSize = 17f
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        canvas.drawText(distributor.companyName.ifBlank { "Siddhi Vinayak Krishi Vikas Kendra" }, textStartX, y + 18f, paint)
+        canvas.drawText(distributor.companyName.ifBlank { "SV AGRO SHOPE" }, textStartX, y + 18f, paint)
 
         paint.color = Color.rgb(71, 85, 105)
         paint.textSize = 8.5f
@@ -846,12 +846,21 @@ object AgroPdfHelper {
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             canvas.drawText(nameDisplay, margin + 28f, y + 14f, paint)
 
-            // Pack size
+            // Pack size & Unit display
             paint.typeface = Typeface.DEFAULT
-            canvas.drawText(item.packSize.ifBlank { "Standard" }.take(14), margin + 280f, y + 14f, paint)
+            val unitStr = item.unit.ifBlank { "" }
+            val packStr = item.packSize.ifBlank { "" }
+            val unitDisplay = when {
+                packStr.isNotBlank() && unitStr.isNotBlank() && !packStr.contains(unitStr, ignoreCase = true) -> "$packStr ($unitStr)"
+                packStr.isNotBlank() -> packStr
+                unitStr.isNotBlank() -> unitStr
+                else -> "Standard"
+            }
+            canvas.drawText(unitDisplay.take(16), margin + 280f, y + 14f, paint)
 
-            // Quantity
-            canvas.drawText("${item.quantity}", margin + 355f, y + 14f, paint)
+            // Quantity with unit
+            val qtyDisplay = if (unitStr.isNotBlank() && unitStr != "PCS") "${item.quantity} $unitStr" else "${item.quantity}"
+            canvas.drawText(qtyDisplay.take(10), margin + 355f, y + 14f, paint)
 
             // Rate
             canvas.drawText("₹%,.2f".format(item.rate), margin + 400f, y + 14f, paint)

@@ -23,6 +23,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import android.net.Uri
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.example.data.model.Product
@@ -46,32 +50,57 @@ fun RetailerProductCatalogScreen(
     val cart by repository.cart.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
+    var visualSearchUri by remember { mutableStateOf<Uri?>(null) }
     var selectedCategory by remember { mutableStateOf("All") }
     var selectedCompany by remember { mutableStateOf(initialCompanyFilter ?: "All") }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            visualSearchUri = uri
+            val imageResults = repository.searchProductsByImage(uri.toString())
+            if (imageResults.isNotEmpty()) {
+                val matchedComp = imageResults.first().company
+                if (matchedComp.isNotBlank()) {
+                    selectedCompany = matchedComp
+                }
+            }
+        }
+    }
     var selectedProductForDetail by remember { mutableStateOf<Product?>(null) }
 
     val categories = remember(products) {
         listOf("All") + products.filter { it.isActive && it.isVisible && !it.isDelisted }.map { it.category }.filter { it.isNotBlank() }.distinct()
     }
 
-    val companyNames = remember(companies) {
-        listOf("All") + companies.map { it.name }.distinct()
+    val companyNames = remember(companies, products) {
+        val fromProds = products.map { it.company.trim() }.filter { it.isNotBlank() }
+        val fromComps = companies.map { it.name.trim() }.filter { it.isNotBlank() }
+        listOf("All") + (fromProds + fromComps).distinct().sorted()
+    }
+
+    val searchTokens = remember(searchQuery) {
+        searchQuery.trim().lowercase().split("\\s+".toRegex()).filter { it.isNotBlank() }
     }
 
     // Filter active, visible, non-delisted products only
-    val filteredProducts = remember(products, searchQuery, selectedCategory, selectedCompany) {
+    val filteredProducts = remember(products, searchTokens, selectedCategory, selectedCompany) {
         products.filter { prod ->
-            prod.isActive && prod.isVisible && !prod.isDelisted &&
+            !prod.isDelisted &&
             (selectedCategory == "All" || prod.category.equals(selectedCategory, ignoreCase = true)) &&
             (selectedCompany == "All" || prod.company.equals(selectedCompany, ignoreCase = true)) &&
-            (searchQuery.isBlank() ||
-                prod.itemName.contains(searchQuery, ignoreCase = true) ||
-                prod.itemCode.contains(searchQuery, ignoreCase = true) ||
-                prod.alias.contains(searchQuery, ignoreCase = true) ||
-                prod.barcode.contains(searchQuery, ignoreCase = true) ||
-                prod.company.contains(searchQuery, ignoreCase = true) ||
-                prod.category.contains(searchQuery, ignoreCase = true)
-            )
+            (searchTokens.isEmpty() || searchTokens.all { token ->
+                prod.itemName.lowercase().contains(token) ||
+                prod.itemCode.lowercase().contains(token) ||
+                prod.alias.lowercase().contains(token) ||
+                prod.barcode.lowercase().contains(token) ||
+                prod.company.lowercase().contains(token) ||
+                prod.category.lowercase().contains(token) ||
+                prod.packSize.lowercase().contains(token) ||
+                prod.unit.lowercase().contains(token) ||
+                prod.description.lowercase().contains(token)
+            })
         }
     }
 
@@ -156,7 +185,7 @@ fun RetailerProductCatalogScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Search Bar
+            // Search Bar with Visual Camera Search
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -165,9 +194,25 @@ fun RetailerProductCatalogScreen(
                     Icon(Icons.Default.Search, contentDescription = null, tint = ForestGreenPrimary)
                 },
                 trailingIcon = {
-                    if (searchQuery.isNotBlank()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (searchQuery.isNotBlank() || visualSearchUri != null) {
+                            IconButton(onClick = {
+                                searchQuery = ""
+                                visualSearchUri = null
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
+                        }
+                        IconButton(onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }) {
+                            Icon(
+                                Icons.Default.PhotoCamera,
+                                contentDescription = "Visual product search",
+                                tint = if (visualSearchUri != null) GoldenSun else ForestGreenPrimary
+                            )
                         }
                     }
                 },
@@ -178,6 +223,37 @@ fun RetailerProductCatalogScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .testTag("catalog_search_input")
             )
+
+            // Visual search banner indicator
+            if (visualSearchUri != null) {
+                Surface(
+                    color = MintLight,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, tint = ForestGreenPrimary, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Visual photo search applied", fontSize = 12.sp, color = ForestGreenPrimary, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { visualSearchUri = null },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Clear Photo", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
 
             // Category filter chips
             LazyRow(

@@ -307,12 +307,23 @@ fun AdminPaymentRemindersScreen(
             allRetailers = retailers,
             initialTargetMode = initialTargetMode,
             onDismiss = { isCreatingReminder = false },
-            onSendBulk = { targetParties, msg, dueDays ->
+            onSendBulk = { targetParties, msg, dueDays, customAmount ->
                 val due = System.currentTimeMillis() + (dueDays * 86400000L)
-                repository.sendBulkPaymentReminders(targetParties, msg, due)
+                if (targetParties.size == 1 && customAmount != null) {
+                    val ret = targetParties[0]
+                    repository.createPaymentReminder(
+                        retailerId = ret.id,
+                        dueDate = due,
+                        message = msg,
+                        overdueAmount = customAmount,
+                        sendPush = true
+                    )
+                } else {
+                    repository.sendBulkPaymentReminders(targetParties, msg, due)
+                }
                 Toast.makeText(
                     context,
-                    "Payment reminder broadcast sent to ${targetParties.size} party(s)!",
+                    "Payment reminder sent to ${targetParties.size} party(s) with audio notification!",
                     Toast.LENGTH_LONG
                 ).show()
                 isCreatingReminder = false
@@ -328,11 +339,14 @@ fun CreateReminderDialog(
     allRetailers: List<Retailer>,
     initialTargetMode: String = "ALL_DUE",
     onDismiss: () -> Unit,
-    onSendBulk: (List<Retailer>, String, Int) -> Unit
+    onSendBulk: (List<Retailer>, String, Int, Double?) -> Unit
 ) {
     val context = LocalContext.current
     var targetMode by remember { mutableStateOf(initialTargetMode) } // "ALL_DUE", "ALL_RETAILERS", "SINGLE"
     var selectedRetailer by remember { mutableStateOf<Retailer?>(retailers.firstOrNull() ?: allRetailers.firstOrNull()) }
+    var customOverdueAmount by remember(selectedRetailer) {
+        mutableStateOf(selectedRetailer?.outstandingAmount?.takeIf { it > 0 }?.toInt()?.toString() ?: "")
+    }
     var dueDays by remember { mutableIntStateOf(3) }
     var message by remember {
         mutableStateOf(
@@ -418,6 +432,19 @@ fun CreateReminderDialog(
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = customOverdueAmount,
+                        onValueChange = { customOverdueAmount = it },
+                        label = { Text("Overdue Amount (₹) *") },
+                        placeholder = { Text("Admin specifies OD balance") },
+                        leadingIcon = {
+                            Text("₹", fontWeight = FontWeight.Bold, color = ForestGreenPrimary, modifier = Modifier.padding(start = 12.dp))
+                        },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 } else {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
@@ -470,7 +497,7 @@ fun CreateReminderDialog(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 val samplePartyName = selectedRetailer?.businessName ?: "Kisan Agro Agency"
-                val sampleAmount = selectedRetailer?.outstandingAmount ?: 15400.0
+                val sampleAmount = customOverdueAmount.toDoubleOrNull() ?: selectedRetailer?.outstandingAmount ?: 15400.0
                 val sampleDue = System.currentTimeMillis() + (dueDays * 86400000L)
                 var isTestPlaying by remember { mutableStateOf(false) }
 
@@ -545,7 +572,7 @@ fun CreateReminderDialog(
                     Button(
                         onClick = {
                             if (resolvedTargetList.isNotEmpty() && message.isNotBlank()) {
-                                onSendBulk(resolvedTargetList, message, dueDays)
+                                onSendBulk(resolvedTargetList, message, dueDays, customOverdueAmount.toDoubleOrNull())
                             }
                         },
                         modifier = Modifier.weight(1f),

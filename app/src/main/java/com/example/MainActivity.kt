@@ -18,14 +18,19 @@ import com.example.data.repository.AgroRepository
 import com.example.data.repository.AuthManager
 import com.example.ui.admin.AdminMainScreen
 import com.example.ui.auth.LoginScreen
+import com.example.ui.auth.SplashScreen
 import com.example.ui.retailer.RetailerMainScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.util.AgroNotificationHelper
+
+import android.content.Intent
+import com.example.ui.retailer.RetailerTab
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var repository: AgroRepository
     private lateinit var authManager: AuthManager
+    private val incomingIntentState = mutableStateOf<Intent?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,6 +39,7 @@ class MainActivity : ComponentActivity() {
         repository = AgroRepository(applicationContext)
         authManager = AuthManager(applicationContext)
         AgroNotificationHelper.createNotificationChannel(applicationContext)
+        incomingIntentState.value = intent
 
         setContent {
             MyApplicationTheme {
@@ -51,67 +57,99 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val currentUser by authManager.currentUser.collectAsState()
-                    val currentRetailer by authManager.currentRetailer.collectAsState()
-                    val retailers by repository.retailers.collectAsState()
+                    var showSplash by remember { mutableStateOf(true) }
 
-                    // Ensure retailer object is restored if session was preserved
-                    LaunchedEffect(currentUser, retailers) {
-                        authManager.restoreRetailerObject(retailers)
-                    }
+                    if (showSplash) {
+                        SplashScreen(
+                            onSplashFinished = { showSplash = false }
+                        )
+                    } else {
+                        val currentUser by authManager.currentUser.collectAsState()
+                        val currentRetailer by authManager.currentRetailer.collectAsState()
+                        val retailers by repository.retailers.collectAsState()
 
-                    // Also sync currentRetailer if retailer was updated in repository
-                    LaunchedEffect(retailers) {
-                        val current = currentRetailer
-                        if (current != null) {
-                            val refreshed = retailers.find { it.id == current.id }
-                            if (refreshed != null && refreshed != current) {
-                                authManager.updateCurrentRetailer(refreshed)
+                        var autoPlayVoiceReminder by remember { mutableStateOf(false) }
+                        var initialRetailerTab by remember { mutableStateOf(RetailerTab.HOME) }
+
+                        val activeIntent = incomingIntentState.value
+                        LaunchedEffect(activeIntent, retailers) {
+                            if (activeIntent?.getStringExtra("ACTION") == "PLAY_REMINDER_SOUND") {
+                                val targetRetailerId = activeIntent.getStringExtra("RETAILER_ID")
+                                val matched = retailers.find { it.id == targetRetailerId }
+                                if (matched != null) {
+                                    authManager.setRetailerSession(matched)
+                                }
+                                autoPlayVoiceReminder = true
+                                initialRetailerTab = RetailerTab.REMINDERS
                             }
                         }
-                    }
 
-                    val user = currentUser
-                    val retailer = currentRetailer
+                        // Ensure retailer object is restored if session was preserved
+                        LaunchedEffect(currentUser, retailers) {
+                            authManager.restoreRetailerObject(retailers)
+                        }
 
-                    when {
-                        user == null -> {
-                            LoginScreen(
-                                authManager = authManager,
-                                repository = repository,
-                                onLoginSuccess = { /* State updates trigger navigation automatically */ }
-                            )
+                        // Also sync currentRetailer if retailer was updated in repository
+                        LaunchedEffect(retailers) {
+                            val current = currentRetailer
+                            if (current != null) {
+                                val refreshed = retailers.find { it.id == current.id }
+                                if (refreshed != null && refreshed != current) {
+                                    authManager.updateCurrentRetailer(refreshed)
+                                }
+                            }
                         }
-                        user.role == UserRole.ADMIN -> {
-                            AdminMainScreen(
-                                admin = AdminUser(
-                                    id = user.id,
-                                    email = user.email.ifBlank { "admin@agroretail.com" },
-                                    name = user.name.ifBlank { "Distributor Admin" }
-                                ),
-                                repository = repository,
-                                onLogout = { authManager.logout() }
-                            )
-                        }
-                        user.role == UserRole.RETAILER -> {
-                            if (retailer != null) {
-                                RetailerMainScreen(
-                                    retailer = retailer,
-                                    repository = repository,
-                                    onLogout = { authManager.logout() }
-                                )
-                            } else {
-                                // In case retailer is still loading from state
+
+                        val user = currentUser
+                        val retailer = currentRetailer
+
+                        when {
+                            user == null -> {
                                 LoginScreen(
                                     authManager = authManager,
                                     repository = repository,
-                                    onLoginSuccess = { }
+                                    onLoginSuccess = { /* State updates trigger navigation automatically */ }
                                 )
+                            }
+                            user.role == UserRole.ADMIN -> {
+                                AdminMainScreen(
+                                    admin = AdminUser(
+                                        id = user.id,
+                                        email = user.email.ifBlank { "admin@agroretail.com" },
+                                        name = user.name.ifBlank { "Distributor Admin" }
+                                    ),
+                                    repository = repository,
+                                    onLogout = { authManager.logout() }
+                                )
+                            }
+                            user.role == UserRole.RETAILER -> {
+                                if (retailer != null) {
+                                    RetailerMainScreen(
+                                        retailer = retailer,
+                                        repository = repository,
+                                        initialTab = initialRetailerTab,
+                                        autoPlayVoiceReminder = autoPlayVoiceReminder,
+                                        onLogout = { authManager.logout() }
+                                    )
+                                } else {
+                                    // In case retailer is still loading from state
+                                    LoginScreen(
+                                        authManager = authManager,
+                                        repository = repository,
+                                        onLoginSuccess = { }
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingIntentState.value = intent
     }
 }
